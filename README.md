@@ -104,7 +104,7 @@ Setup the Mobile Peer
 
 Wait for few seconds and you will see the Local Video from the Web app display on your device and local video from device display in Remote Video in the Web app.
 
-<video controls src="images/Screen Recording.mp4"></video>
+https://github.com/user-attachments/assets/770de43f-84d7-43db-90dc-e8bc600168c0
 
 ## iOS Implementation
 For iOS, I used [WebRTC](https://github.com/stasel/WebRTC) binary framework, I try to use the official binary framework from [GoogleWebRTC](https://cocoapods.org/pods/GoogleWebRTC) but it didn't work well I don't know why!
