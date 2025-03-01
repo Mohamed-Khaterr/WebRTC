@@ -1,0 +1,232 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body background="black">
+    <h1>Hello World!</h1>
+    <table>
+        <tr>
+            <td>
+                <h2>Local Video</h2>
+            </td>
+            <td>
+                <h2>Remote Video</h2>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <video autoplay playsinline width="400" height="300" id="local-video" style="background-color: blue;"></video>
+            </td>
+            <td>
+                <video autoplay playsinline muted width="400" height="300" id="remote-video" style="background-color: red;"></video>
+            </td>
+        </tr>
+        <tr>
+            <td>
+                <div>
+                    <button id="call-action">Call</button>
+                    <button id="close-action">Close</button>
+                </div>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+
+
+<script>
+    document.getElementById("call-action").addEventListener("click", function() {
+        createOffer();
+    });
+
+    document.getElementById("close-action").addEventListener("click", function() {
+        
+    });
+</script>
+
+<!-- WebSocket Client -->
+<script>
+    const socket = new WebSocket('ws://localhost:8080')
+
+    socket.onopen = function() {
+        console.log("WebSocket open!")
+    }
+
+    socket.onclose = function() {
+        console.log("WebSocket closed!")
+    }
+
+    socket.onmessage = function(e) {
+        const data = JSON.parse(e.data)
+        const { user } = data;
+        const { message } = data;
+        // console.log("User:", user)
+        // console.log("New Message:", message)
+
+        const { offer } = message;
+        if(offer) {
+            console.log("Receive Offer")
+            createAnswer(offer);
+        }
+        
+        const { answer } = message;
+        if(answer) {
+            console.log("Receive Answer")
+            receivedAnswer(answer)
+        }
+
+        const { ice } = message;
+        if(ice) {
+            console.log("Receive ICE")
+            addRemoteICE(ice)
+        }
+    }
+
+    function sendMessage(message) {
+        socket.send(JSON.stringify(message));
+    }
+</script>
+
+<!-- Common WebRTC for Local & Remote -->
+<script>
+    // Setup WebRTC
+    // Setup STUN server
+    const configuration = {
+        iceServers: [
+            {
+                'urls': 'stun:stun.l.google.com:19302'
+            },
+            {
+                'urls': 'turn:192.158.29.39:3478?transport=udp',
+                'credential': 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
+                'username': '28224511:1379330808'
+            }
+        ],
+        bundlePolicy: "max-compat"
+    }
+
+    let peerConnection = createPeerConnection();
+
+    // This method is used when PeerConnection is closed to create new PeerConnection
+    function createPeerConnection() {
+        const peerConnection = new RTCPeerConnection(configuration);
+
+        shareMedia()
+
+        let iceCandidates = [];
+
+        // Handle generate ICE
+        peerConnection.onicecandidate = function(event) {
+            const candidate = event.candidate
+            if(candidate) {
+                console.log("Generate ICE")
+                iceCandidates.push(candidate);
+            } else {
+                console.log("Complete Generating ICE")
+                iceCandidates.forEach(function(ice){
+                    sendMessage({ice: ice});
+                });
+                iceCandidates = [];
+            }
+        }
+
+        // Handle incoming media tracks from Remote Peer
+        peerConnection.ontrack = function(event) {
+            const remoteVideo = document.getElementById("remote-video");
+            const { streams } = event;
+            if(streams) {
+                console.log("Track received:", streams);
+                remoteVideo.srcObject = streams[0];
+            }
+        };
+
+        peerConnection.addEventListener("connectionstatechange", () => {
+            console.log("PeerConnection state:", peerConnection.connectionState);
+
+            if (peerConnection.connectionState === "closed" || peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+                this.peerConnection = null;
+                this.peerConnection = createPeerConnection()
+            }
+        });
+
+        return peerConnection
+    }
+
+    function shareMedia() {
+        const config = {
+            video: true
+        }
+
+        const localVideo = document.getElementById("local-video");
+
+        // Get Local Video and Audio
+        if(navigator.getDisplayMedia) {
+            navigator.getDisplayMedia(config).then(function(stream) {
+                localVideo.srcObject = stream;
+
+                // Send Local Media to Remote Peer
+                stream.getTracks().forEach(function(track) {
+                    peerConnection.addTrack(track, stream);
+                });
+            });
+        } else if (navigator.mediaDevices.getDisplayMedia) {
+            navigator.mediaDevices.getDisplayMedia(config).then(function(stream) {
+                localVideo.srcObject = stream;
+
+                // Send Local Media to Remote Peer
+                stream.getTracks().forEach(function(track) {
+                    peerConnection.addTrack(track, stream);
+                });
+            });
+        }
+    }
+
+    async function addRemoteICE(ice) {
+        try {
+            await peerConnection.addIceCandidate(ice);
+        } catch (error) {
+            console.log("Add Remote ICE Error:", error);
+        }
+    }
+</script>
+
+<!-- WebRTC Caller -->
+<script>
+    async function createOffer() {
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            console.log("Send Offer")
+            // Send offer to Remote Peer
+            sendMessage({offer: offer})
+        } catch (error) {
+            console.log("Create Offer Error:", error)
+        }
+    }
+
+    // Handler Answer from Remote Peer
+    async function receivedAnswer(answer) {
+        await peerConnection.setRemoteDescription(answer)
+    }
+</script>
+
+<!-- WebRTC Receiver -->
+<script>
+    async function createAnswer(offer) {
+        try {
+            await peerConnection.setRemoteDescription(offer);
+
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            console.log("Send Answer")
+            // Send Answer to Remote Peer
+            sendMessage({answer: answer})
+        } catch (error) {
+            console.log("Create Answer Error:", error)
+        }
+    }
+</script>
